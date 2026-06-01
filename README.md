@@ -8,6 +8,9 @@
 
 - Konwersja **HEX → DEC** oraz **DEC → HEX** (przełączana jednym przyciskiem)
 - Równoległy podgląd wyniku w **DEC / HEX / BIN / OCT**
+- **Panel „DZIAŁANIE"** — pełny zapis przeliczenia krok po kroku:
+  - HEX→DEC: rozwinięcie pozycyjne (potęgowanie · mnożenie · dodawanie), np. `1·16^3 + A·16^2 + 3·16^1 + F·16^0 = 4096 + 2560 + 48 + 15 = 6719`
+  - DEC→HEX: kolejne dzielenie z resztą, reszty czytane od dołu
 - Czytelne grupowanie cyfr (dziesiętne co 3, szesnastkowe i dwójkowe co 4)
 - Ekranowa klawiatura cyfr sterowana D-padem — **klawiatura niepotrzebna**
 - Renderowanie SDL2 + PIL (działa wprost na DRM/KMS, bez X11)

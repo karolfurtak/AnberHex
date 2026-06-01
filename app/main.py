@@ -58,6 +58,45 @@ def conversions(s: str, mode: str):
         'oct': format(v, 'o'),
     }
 
+def derivation(s, mode):
+    """Pełny zapis działania konwersji jako lista linii.
+    H2D: rozwinięcie pozycyjne (potęgowanie · mnożenie · dodawanie).
+    D2H: kolejne dzielenie z resztą (reszty czytane od dołu)."""
+    v = parse_value(s, mode)
+    if v is None:
+        return []
+    if mode == 'H2D':
+        s = s.upper()
+        n = len(s)
+        pow_terms, mul_terms, add_terms = [], [], []
+        for i, ch in enumerate(s):
+            k = n - 1 - i
+            d = int(ch, 16)
+            pow_terms.append(f'{ch}·16^{k}')
+            mul_terms.append(f'{d}·{16 ** k}')
+            add_terms.append(str(d * 16 ** k))
+        return [
+            'wzór:  d_k·16^k + ... + d_1·16^1 + d_0·16^0',
+            ' + '.join(pow_terms) + ' =',
+            ' + '.join(mul_terms) + ' =',
+            ' + '.join(add_terms) + ' =',
+            str(v),
+        ]
+    # D2H — dzielenie z resztą
+    wzor = 'wzór:  n : 16 = iloraz  r reszta  (powtarzaj do 0)'
+    if v == 0:
+        return [wzor, '0 : 16 = 0  r 0 → 0', 'reszty od dołu → 0']
+    lines, digits, x = [wzor], [], v
+    while x > 0:
+        q, r = divmod(x, 16)
+        hd = format(r, 'X')
+        lines.append(f'{x} : 16 = {q}  r {r} → {hd}')
+        digits.append(hd)
+        x = q
+    lines.append('reszty od dołu → ' + ''.join(reversed(digits)))
+    return lines
+
+
 def _selftest():
     cases = [
         ('1A3F', 'H2D', 6719),
@@ -81,6 +120,19 @@ def _selftest():
     assert conversions('XYZ', 'H2D') is None
     assert conversions('9', 'D2H')['hex'] == '9'
     assert conversions('4660', 'D2H')['hex'] == '1234'
+    # działanie (derivation)
+    dv = derivation('1A3F', 'H2D')
+    print('H2D deriv:', ' | '.join(dv))
+    assert dv[0].startswith('wzór')
+    assert dv[1] == '1·16^3 + A·16^2 + 3·16^1 + F·16^0 ='
+    assert dv[2].endswith('=') and dv[3].endswith('=')
+    assert dv[-1] == '6719'
+    dh = derivation('6719', 'D2H')
+    print('D2H deriv:', ' | '.join(dh))
+    assert dh[0].startswith('wzór')
+    assert dh[-1].endswith('1A3F')
+    # carry-over przy zmianie kierunku: wartość zachowana w bazie nowego trybu
+    v0 = parse_value('1A3F', 'H2D'); assert v0 == 6719 and format(v0, 'X') == '1A3F'
     print('selftest:', 'PASS' if ok else 'FAIL')
     return 0 if ok else 1
 
@@ -108,7 +160,10 @@ KEYSEL= (60,  90,  140, 255)
 
 # evdev (event1 = ANBERNIC-keys + D-pad)
 EV_KEY, EV_ABS = 1, 3
-BTN_A, BTN_B, BTN_X, BTN_Y, BTN_START = 304, 305, 307, 308, 315
+BTN_A, BTN_B, BTN_X, BTN_START = 304, 305, 307, 315
+# Y: na RG40XX V fizyczny przycisk Y wysyła 306 (BTN_C), nie 308 (BTN_WEST) —
+# potwierdzone keylogiem. Bindujemy oba dla odporności na różnice egzemplarzy.
+BTN_Y_CODES = {306, 308}
 MENU_KEYS = {354, 316}
 ABS_X, ABS_Y = 16, 17
 POWER_KEY = 116
@@ -138,6 +193,7 @@ class HexApp:
         self.f_lg = ImageFont.truetype(FONT_PATH, 26)
         self.f_xl = ImageFont.truetype(FONT_PATH, 40)
         self.f_key= ImageFont.truetype(FONT_PATH, 22)
+        self.f_der= ImageFont.truetype(FONT_PATH, 13)   # panel "DZIAŁANIE"
         self._tex = None
 
         # evdev event1 (D-pad + przyciski) — grab z fallbackiem no-grab
@@ -195,8 +251,14 @@ class HexApp:
         self.inp = ''; self.dirty = True
 
     def _toggle_mode(self):
+        # Przenieś bieżącą wartość do inputu w bazie NOWEGO trybu źródłowego,
+        # by od razu zobaczyć drogę odwrotną (HEX→DEC ↔ DEC→HEX tej samej liczby).
+        v = parse_value(self.inp, self.mode)
         self.mode = 'D2H' if self.mode == 'H2D' else 'H2D'
-        self.inp = ''
+        if v is None:
+            self.inp = ''
+        else:
+            self.inp = format(v, 'X') if self.mode == 'H2D' else str(v)
         self.sel = min(self.sel, len(self.palette()) - 1)
         self.dirty = True
 
@@ -210,6 +272,19 @@ class HexApp:
     # ── render ───────────────────────────────────────────────────────────────
     def _t(self, x, y, txt, font, color):
         self.draw.text((x, y), txt, font=font, fill=color)
+
+    @staticmethod
+    def _wrap(text, maxchars):
+        """Zawijanie po spacjach do maxchars znaków (zachowuje człony ' + ')."""
+        out, cur = [], ''
+        for w in text.split(' '):
+            if cur and len(cur) + 1 + len(w) > maxchars:
+                out.append(cur); cur = w
+            else:
+                cur = w if not cur else cur + ' ' + w
+        if cur:
+            out.append(cur)
+        return out
 
     def render(self):
         d = self.draw
@@ -248,6 +323,25 @@ class HexApp:
             self._t(16, yy, f"HEX:  {conv['hex']}", self.f_sm, FG); yy += 18
             self._t(16, yy, f"BIN:  {conv['bin']}", self.f_sm, FG); yy += 18
             self._t(16, yy, f"OCT:  {conv['oct']}", self.f_sm, FG)
+
+        # Panel DZIAŁANIE (prawa kolumna) — pełny zapis przeliczenia
+        dx = 322
+        d.line([(dx - 10, 84), (dx - 10, 296)], fill=SEP, width=1)
+        self._t(dx, 88, f'DZIAŁANIE  ({src}→{dst}):', self.f_sm, ACC)
+        deriv = derivation(self.inp, self.mode)
+        dy = 112
+        if not deriv:
+            self._t(dx, dy, '—  (wpisz wartość)', self.f_der, DIM)
+        else:
+            last_i = len(deriv) - 1
+            for i, ln in enumerate(deriv):
+                col = YEL if ln.startswith('wzór') else (GRN if i == last_i else FG)
+                for seg in self._wrap(ln, 40):
+                    self._t(dx, dy, seg, self.f_der, col); dy += 17
+                    if dy > 290:
+                        break
+                if dy > 290:
+                    break
 
         # Klawiatura cyfr
         d.line([(0, 300), (W, 300)], fill=SEP, width=1)
@@ -314,14 +408,13 @@ class HexApp:
                 if select.select([self._gp.fd], [], [], 0)[0]:
                     for e in self._gp.read():
                         if e.type == EV_KEY and e.value == 1:
-                            self._dbg.write(f'KEY code={e.code}\n'); self._dbg.flush()
                             if e.code in MENU_KEYS and not guard:
                                 self.quit(); return
                             elif e.code in (BTN_A, BTN_START):
                                 self._append()
                             elif e.code == BTN_B:
                                 self._backspace()
-                            elif e.code == BTN_Y:
+                            elif e.code in BTN_Y_CODES:
                                 self._clear()
                             elif e.code == BTN_X:
                                 self._toggle_mode()
