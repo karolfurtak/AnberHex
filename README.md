@@ -1,5 +1,7 @@
 # AnberHex
 
+![CI](https://github.com/karolfurtak/AnberHex/actions/workflows/ci.yml/badge.svg)
+
 **Konwerter systemów liczbowych w kieszeni.** SDL2-owa aplikacja dla **Anbernic RG40XX V**, która przelicza liczby między systemem **szesnastkowym (HEX, base-16)** a **dziesiętnym (DEC, base-10)** — i z powrotem. Dodatkowo pokazuje zapis **dwójkowy (BIN)** i **ósemkowy (OCT)**. Pełnoekranowa, sterowana padem konsoli, bez potrzeby klawiatury.
 
 ![AnberHex](AnberHex.png)
@@ -51,12 +53,19 @@ Następnie uruchom **AnberHex** z App Center.
 
 Wejście budujesz cyframi z ekranowej klawiatury (w trybie HEX dostępne `0–9 A–F`,
 w trybie DEC tylko `0–9`). Wartość jest na bieżąco parsowana w wybranej bazie i
-prezentowana równolegle we wszystkich czterech systemach. Logika konwersji jest
-oddzielona od GUI i ma wbudowany self-test:
+prezentowana równolegle we wszystkich czterech systemach. **Logika konwersji jest
+oddzielona od GUI** — siedzi w `app/hexconv.py` (bez SDL), więc da się ją testować
+i odpalać w CI bez wyświetlacza.
+
+## Testy / CI
 
 ```bash
-python3 app/main.py --selftest
+python3 app/hexconv.py     # self-test logiki (PASS/FAIL)
+pytest -q tests/           # testy jednostkowe konwersji
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) przy każdym push/PR: AST parse + ruff
+(realne bugi) + self-test + pytest + walidacja struktury GUI + shellcheck launcherów.
 
 ## Licencja
 
