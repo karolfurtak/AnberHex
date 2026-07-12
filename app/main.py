@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hexconv import (HEX_DIGITS, DEC_DIGITS, MAX_LEN,
                      parse_value, group, conversions, derivation, _selftest)
+from input_guard import batch_has_exit
 
 if __name__ == '__main__' and '--selftest' in sys.argv:
     raise SystemExit(_selftest())
@@ -296,7 +297,13 @@ class HexApp:
             # evdev pad
             if self._gp:
                 if select.select([self._gp.fd], [], [], 0)[0]:
-                    for e in self._gp.read():
+                    events = list(self._gp.read())
+                    # WYJSCIE NAJPIERW: jesli w tej partii jest MENU/MODE, wyjdz
+                    # CZYSTO — bez przetwarzania JAKIEGOKOLWIEK innego zdarzenia
+                    # z tej partii (inaczej klawisz przed MENU "musnie" pole).
+                    if not guard and batch_has_exit(events, MENU_KEYS):
+                        self.quit(); return
+                    for e in events:
                         if e.type == EV_KEY and e.value == 1:
                             if e.code in MENU_KEYS and not guard:
                                 self.quit(); return
